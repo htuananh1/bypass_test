@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Study Solver",
+  "description": "Giải bài tập thông minh bằng Gemini với prompt chuẩn, hỗ trợ Orion.",
+  "version": "0.1.0",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs",
+    "scripting",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_title": "Gemini Study Solver"
+  },
+  "options_page": "src/options.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
