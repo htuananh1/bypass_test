@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gemini Homework Solver</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="app__header card">
+        <div class="blob">
+          <img src="assets/blob.svg" alt="Gemini blob" />
+        </div>
+        <div class="title">
+          <h1>Gemini Solver</h1>
+          <span id="status-indicator" class="status status--offline">No key</span>
+        </div>
+        <button id="theme-toggle" class="ghost" aria-label="Toggle theme">
+          <span>☀️</span>
+        </button>
+      </header>
+
+      <section class="card controls">
+        <label class="field">
+          <span data-i18n="apiKeyLabel">API key</span>
+          <div class="field__input">
+            <input id="api-key" type="password" autocomplete="off" />
+            <button id="toggle-key" class="ghost" type="button">👁️</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span data-i18n="modelLabel">Model</span>
+          <select id="model">
+            <option value="gemini-1.5-flash-latest">gemini-1.5-flash-latest</option>
+            <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+            <option value="gemini-1.5-pro-latest">gemini-1.5-pro-latest</option>
+          </select>
+        </label>
+
+        <label class="field field--inline">
+          <input id="cache-toggle" type="checkbox" checked />
+          <span data-i18n="cacheToggle">Enable cache</span>
+        </label>
+
+        <div class="buttons">
+          <button id="save-key" class="primary" type="button" data-i18n="saveKey">Save API key</button>
+          <button id="scan-page" class="secondary" type="button" data-i18n="scanPage">Scan page</button>
+        </div>
+      </section>
+
+      <section class="card questions">
+        <div class="section-heading">
+          <h2 data-i18n="questionsHeading">Detected questions</h2>
+          <span id="question-count">0</span>
+        </div>
+        <ul id="questions-list"></ul>
+      </section>
+
+      <section class="card result">
+        <div class="section-heading">
+          <h2 data-i18n="resultHeading">Result</h2>
+          <button id="copy-answer" class="secondary" type="button" data-i18n="copyAnswer" disabled>Copy</button>
+          <span id="copy-tooltip" class="tooltip" hidden>Đã copy!</span>
+        </div>
+        <div class="tabs" role="tablist">
+          <button class="tab tab--active" data-tab="summary" role="tab" aria-selected="true">Summary</button>
+          <button class="tab" data-tab="steps" role="tab" aria-selected="false">Steps</button>
+          <button class="tab" data-tab="answer" role="tab" aria-selected="false">Answer</button>
+          <button class="tab" data-tab="sources" role="tab" aria-selected="false">Sources</button>
+        </div>
+        <div class="tab-panels">
+          <div class="tab-panel tab-panel--active" data-panel="summary">
+            <p id="result-summary" class="muted"></p>
+          </div>
+          <div class="tab-panel" data-panel="steps">
+            <ol id="result-steps" class="steps"></ol>
+          </div>
+          <div class="tab-panel" data-panel="answer">
+            <pre id="result-answer" class="answer"></pre>
+          </div>
+          <div class="tab-panel" data-panel="sources">
+            <ul id="result-sources" class="sources"></ul>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span>v1.0.0</span>
+        <a href="../README.md" target="_blank" rel="noopener noreferrer">README</a>
+      </footer>
+    </main>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>
