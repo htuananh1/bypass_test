@@ -1,223 +1,170 @@
-const RATE_LIMIT_MS = 5000;
-const CACHE_PREFIX = 'cache:';
-const DEFAULT_MODEL = 'gemini-1.5-flash-latest';
+const browserApi = typeof chrome !== 'undefined' ? chrome : browser;
 
-let lastRequestAt = 0;
+const DEFAULT_MODEL = 'gemini-flash-latest';
+const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === 'SOLVE_QUESTION') {
-    handleSolveRequest(message.payload)
-      .then((result) => sendResponse({ ok: true, data: result }))
-      .catch((error) => sendResponse({ ok: false, error: serializeError(error) }));
-    return true;
+browserApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || !message.action) {
+    return;
   }
-  return false;
+
+  const respond = (payload) => {
+    try {
+      sendResponse(payload);
+    } catch (error) {
+      console.warn('Unable to deliver response', error);
+    }
+  };
+
+  (async () => {
+    try {
+      switch (message.action) {
+        case 'ping':
+          respond({ ok: true });
+          return;
+        case 'validate-key':
+          await verifyApiKey(message.apiKey, message.model);
+          respond({ ok: true });
+          return;
+        case 'capture-visible-tab': {
+          const dataUrl = await captureVisibleTab(sender);
+          respond({ ok: true, dataUrl });
+          return;
+        }
+        case 'gemini-request': {
+          const text = await sendToGemini(message.payload || {});
+          respond({ ok: true, text });
+          return;
+        }
+        default:
+          respond({ ok: false, error: serializeError(createError('unknown_action', 'Yêu cầu không được hỗ trợ.')) });
+      }
+    } catch (error) {
+      respond({ ok: false, error: serializeError(error) });
+    }
+  })();
+
+  return true;
 });
 
-async function handleSolveRequest(payload) {
-  const {
-    question,
-    context = '',
-    apiKey,
-    model = DEFAULT_MODEL,
-    origin,
-    bypassCache = false
-  } = payload || {};
-
-  if (!apiKey) {
-    throw createError('missing_api_key', 'Chưa có API key. Vui lòng nhập trong Settings.');
-  }
-
-  if (!question) {
-    throw createError('missing_question', 'Không tìm thấy câu hỏi hợp lệ.');
-  }
-
-  const cacheKey = await buildCacheKey(question, origin || '');
-  if (!bypassCache) {
-    const cached = await readCache(cacheKey);
-    if (cached) {
-      return { ...cached, cached: true };
+async function captureVisibleTab(sender) {
+  return new Promise((resolve, reject) => {
+    try {
+      const targetWindow = sender?.tab?.windowId;
+      browserApi.tabs.captureVisibleTab(
+        typeof targetWindow === 'number' ? targetWindow : undefined,
+        { format: 'jpeg', quality: 90 },
+        (dataUrl) => {
+          const lastError = browserApi.runtime.lastError;
+          if (lastError) {
+            reject(createError('capture_failed', lastError.message));
+            return;
+          }
+          if (!dataUrl) {
+            reject(createError('capture_failed', 'Không thể chụp màn hình.'));
+            return;
+          }
+          resolve(dataUrl);
+        }
+      );
+    } catch (error) {
+      reject(createError('capture_failed', 'Không thể chụp màn hình.', error));
     }
+  });
+}
+
+async function verifyApiKey(apiKey, model) {
+  if (!apiKey) {
+    throw createError('missing_api_key', 'Vui lòng nhập API key.');
+  }
+  await callGemini({ apiKey, model: model || DEFAULT_MODEL, prompt: 'ping' });
+}
+
+async function sendToGemini({ apiKey, model, prompt, imageData }) {
+  if (!apiKey) {
+    throw createError('missing_api_key', 'Vui lòng nhập API key.');
+  }
+  if (!prompt) {
+    throw createError('missing_prompt', 'Thiếu nội dung yêu cầu.');
   }
 
-  const now = Date.now();
-  if (now - lastRequestAt < RATE_LIMIT_MS) {
-    const wait = Math.ceil((RATE_LIMIT_MS - (now - lastRequestAt)) / 1000);
-    throw createError('rate_limited', `Đang bị giới hạn, thử lại sau ${wait}s.`);
+  return callGemini({ apiKey, model: model || DEFAULT_MODEL, prompt, imageData });
+}
+
+async function callGemini({ apiKey, model, prompt, imageData }) {
+  const parts = [{ text: prompt }];
+  if (imageData) {
+    parts.push({ inlineData: { mimeType: 'image/jpeg', data: imageData } });
   }
 
-  lastRequestAt = now;
-
-  const response = await callGemini(question, context, apiKey, model);
-  const normalized = normalizeGeminiResponse(response, question, origin || '');
-
-  await writeCache(cacheKey, normalized);
-
-  return { ...normalized, cached: false };
-}
-
-async function buildCacheKey(question, origin) {
-  const hash = fnv1aHash(`${question}|${origin}`);
-  return `${CACHE_PREFIX}${hash}`;
-}
-
-async function readCache(cacheKey) {
-  const result = await chrome.storage.local.get(cacheKey);
-  return result?.[cacheKey] || null;
-}
-
-async function writeCache(cacheKey, value) {
-  try {
-    await chrome.storage.local.set({ [cacheKey]: value });
-  } catch (error) {
-    console.warn('Failed to write cache', error);
-  }
-}
-
-async function callGemini(question, context, apiKey, model) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-  const prompt = buildPrompt(question, context);
+  const endpoint = `${GEMINI_ENDPOINT}${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   let response;
   try {
-    response = await fetch(url, {
+    response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: { temperature: 0.2, topP: 0.95, topK: 40 }
+      })
     });
   } catch (error) {
-    throw createError('network_error', 'Không thể kết nối tới Gemini. Kiểm tra mạng và CORS.', error);
+    throw createError('network_error', 'Không thể kết nối tới Gemini.', error);
   }
 
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    const err = classifyHttpError(response.status, text);
-    throw err;
+    const raw = await response.text().catch(() => '');
+    throw classifyGeminiError(response.status, raw);
   }
 
   let data;
   try {
     data = await response.json();
   } catch (error) {
-    throw createError('invalid_json', 'Phản hồi không phải JSON hợp lệ.', error);
+    throw createError('invalid_json', 'Phản hồi không hợp lệ từ Gemini.', error);
   }
 
-  return data;
+  const text = data?.candidates?.[0]?.content?.parts
+    ?.map((part) => part?.text || '')
+    .join('\n')
+    .trim();
+
+  if (!text) {
+    throw createError('empty_response', 'Không nhận được phản hồi từ Gemini.');
+  }
+
+  return text;
 }
 
-function buildPrompt(question, context) {
-  const trimmedContext = (context || '').trim().slice(0, 1500);
-  const trimmedQuestion = (question || '').trim().slice(0, 2000);
-  return [
-    'Bạn là gia sư giỏi. Hãy trả về JSON với khóa: answer (ngắn gọn), summary (1 câu), steps (danh sách có đánh số), sources (mảng URL, nếu không có để trống).',
-    'Luôn dùng tiếng Việt cho summary và steps, answer giữ nguyên ngôn ngữ gốc nếu cần.',
-    `Câu hỏi:\n${trimmedQuestion}`,
-    `Ngữ cảnh trang:\n${trimmedContext}`
-  ].join('\n\n');
-}
-
-function normalizeGeminiResponse(response, question, origin) {
-  if (!response) {
-    return baseResult(question, origin, '', '', [], []);
-  }
-
-  const parts = response?.candidates?.[0]?.content?.parts || [];
-  const text = parts.map((p) => p?.text || '').join('\n').trim();
-
-  const json = parseJsonFromText(text);
-
-  if (json) {
-    return baseResult(
-      question,
-      origin,
-      json.summary || '',
-      normalizeSteps(json.steps),
-      json.answer || '',
-      Array.isArray(json.sources) ? json.sources.map((src) => String(src)) : []
-    );
-  }
-
-  return baseResult(question, origin, '', [], text || '', []);
-}
-
-function baseResult(question, origin, summary, steps, answer, sources) {
-  return {
-    question,
-    origin,
-    summary,
-    steps,
-    answer,
-    sources
-  };
-}
-
-function normalizeSteps(value) {
-  if (!value) return [];
-  if (Array.isArray(value)) {
-    return value.map((step) => String(step));
-  }
-  if (typeof value === 'string') {
-    return value
-      .split(/\n+/)
-      .map((part) => part.trim())
-      .filter(Boolean);
-  }
-  return [];
-}
-
-function parseJsonFromText(text) {
-  if (!text) return null;
-  const trimmed = text.trim();
-  try {
-    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-      return JSON.parse(trimmed);
-    }
-  } catch (error) {
-    // ignore and try substring parsing
-  }
-
-  const match = trimmed.match(/\{[\s\S]*\}/);
-  if (match) {
+function classifyGeminiError(status, bodyText) {
+  let detail = bodyText ? bodyText.slice(0, 300) : '';
+  if (bodyText) {
     try {
-      return JSON.parse(match[0]);
+      const parsed = JSON.parse(bodyText);
+      if (parsed?.error?.message) {
+        detail = parsed.error.message;
+      }
     } catch (error) {
-      return null;
+      // ignore JSON parse errors
     }
   }
-  return null;
-}
 
-function classifyHttpError(status, body) {
-  const detail = extractErrorMessage(body);
-  switch (status) {
-    case 401:
-    case 403:
-      return createError('auth_error', 'API key không hợp lệ hoặc hết hạn.', null, status, detail);
-    case 429:
-      return createError('rate_limited', 'Đang bị giới hạn, thử lại sau.', null, status, detail);
-    default:
-      return createError('http_error', `Lỗi ${status}: ${detail || 'Không xác định.'}`, null, status, detail);
+  if (status === 401 || status === 403) {
+    return createError('auth_error', 'API key không hợp lệ hoặc đã hết hạn.', null, status, detail);
   }
-}
-
-function extractErrorMessage(body) {
-  if (!body) return '';
-  try {
-    const parsed = JSON.parse(body);
-    return parsed?.error?.message || parsed?.message || '';
-  } catch (error) {
-    return body.slice(0, 200);
+  if (status === 429) {
+    return createError('rate_limited', 'Gemini đang giới hạn tốc độ. Vui lòng thử lại sau.', null, status, detail);
   }
+
+  return createError('api_error', detail || `Yêu cầu thất bại với mã ${status}.`, null, status, detail);
 }
 
-function createError(code, message, cause = null, status = null, detail = '') {
+function createError(code, message, cause = null, status = null, detail = null) {
   const error = new Error(message);
   error.code = code;
-  error.status = status;
-  error.detail = detail;
+  error.status = status ?? null;
+  error.detail = detail ?? null;
   if (cause) {
     error.cause = cause;
   }
@@ -225,22 +172,14 @@ function createError(code, message, cause = null, status = null, detail = '') {
 }
 
 function serializeError(error) {
-  if (!error) return { message: 'Unknown error' };
-  return {
-    message: error.message || 'Unknown error',
-    code: error.code || 'unknown',
-    status: error.status || null,
-    detail: error.detail || null
-  };
-}
-
-function fnv1aHash(input) {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = (hash >>> 0) * 0x01000193;
-    hash >>>= 0;
+  if (!error) {
+    return { message: 'Đã xảy ra lỗi không xác định.', code: 'unknown' };
   }
-  return (hash >>> 0).toString(16);
+  return {
+    message: error.message || 'Đã xảy ra lỗi không xác định.',
+    code: error.code || 'unknown',
+    status: error.status ?? null,
+    detail: error.detail ?? null
+  };
 }
 
