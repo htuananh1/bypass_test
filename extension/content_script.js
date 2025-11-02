@@ -6,6 +6,7 @@
   const storageArea = extensionApi?.storage?.sync || extensionApi?.storage?.local;
 
   const DEFAULT_MODEL = 'gemini-flash-latest';
+  const HTML2CANVAS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
   const STORAGE_KEYS = {
     apiKey: 'aiGeminiApiKey',
     model: 'aiGeminiModel',
@@ -41,7 +42,12 @@
     togglePressTimer: null,
     togglePressHandled: false,
     isMobile: isMobileViewport(),
-    savedPosition: null
+    savedPosition: null,
+    host: null,
+    scrollLock: null,
+    html2CanvasReady: false,
+    html2CanvasLoading: null,
+    hostObserver: null
   };
 
   init();
@@ -55,7 +61,32 @@
     applyStealthState();
   }
 
+  function randomId(prefix = 'ai') {
+    return `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
   function buildUI() {
+    const host = document.createElement('div');
+    host.style.position = 'fixed';
+    host.style.inset = '0';
+    host.style.pointerEvents = 'none';
+    host.style.zIndex = '2147483630';
+    host.style.background = 'transparent';
+    host.style.border = 'none';
+    host.style.margin = '0';
+    host.style.padding = '0';
+
+    const attrName = randomId('data');
+    const attrValue = randomId('v');
+    host.setAttribute(attrName, attrValue);
+
+    (document.documentElement || document.body).appendChild(host);
+
+    const shadowRoot = host.attachShadow({ mode: 'closed' });
+    const container = document.createElement('div');
+    container.className = 'ai-root';
+    shadowRoot.appendChild(container);
+
     const panel = document.createElement('div');
     panel.id = 'aiPanel';
     panel.setAttribute('role', 'dialog');
@@ -107,7 +138,7 @@
       </div>
     `;
 
-    document.body.appendChild(panel);
+    container.appendChild(panel);
 
     const toggle = document.createElement('button');
     toggle.id = 'aiPanelToggle';
@@ -116,17 +147,17 @@
     toggle.setAttribute('aria-label', 'Mở trợ lý AI');
     toggle.setAttribute('aria-haspopup', 'dialog');
     toggle.setAttribute('aria-expanded', 'false');
-    document.body.appendChild(toggle);
+    container.appendChild(toggle);
 
     const overlay = document.createElement('div');
     overlay.id = 'aiSnipOverlay';
-    document.body.appendChild(overlay);
+    container.appendChild(overlay);
 
     const snipBox = document.createElement('div');
     snipBox.id = 'aiSnipBox';
-    document.body.appendChild(snipBox);
+    container.appendChild(snipBox);
 
-    injectStyles();
+    injectStyles(shadowRoot);
 
     const modelSelect = panel.querySelector('#modelSelect');
     models.forEach((item) => {
@@ -143,6 +174,9 @@
       option.textContent = subject;
       subjectSelect.appendChild(option);
     });
+
+    state.host = host;
+    monitorHost(host);
 
     return {
       panel,
@@ -166,25 +200,66 @@
       textQuestionInput: panel.querySelector('#textQuestionInput'),
       btnSendTextQuestion: panel.querySelector('#btnSendTextQuestion'),
       imgBox: panel.querySelector('#imgBox'),
-      ansBox: panel.querySelector('#ansBox')
+      ansBox: panel.querySelector('#ansBox'),
+      container,
+      shadowRoot
     };
   }
 
-  function injectStyles() {
-    if (document.getElementById('aiPanelStyles')) return;
+  function monitorHost(host) {
+    if (!host) return;
+    if (state.hostObserver) {
+      state.hostObserver.disconnect();
+    }
+    const observer = new MutationObserver(() => {
+      if (!document.documentElement.contains(host)) {
+        observer.disconnect();
+        (document.documentElement || document.body).appendChild(host);
+        observer.observe(document.documentElement, { childList: true });
+      }
+    });
+    observer.observe(document.documentElement, { childList: true });
+    state.hostObserver = observer;
+  }
+
+  function injectStyles(shadowRoot) {
+    if (!shadowRoot) return;
+    if (shadowRoot.querySelector('style[data-ai-style="core"]')) return;
     const style = document.createElement('style');
-    style.id = 'aiPanelStyles';
+    style.setAttribute('data-ai-style', 'core');
     style.textContent = `
-:root {
+:host {
+  all: initial;
+}
+
+.ai-root {
   --ai-safe-top: env(safe-area-inset-top, 0px);
   --ai-safe-right: env(safe-area-inset-right, 0px);
   --ai-safe-bottom: env(safe-area-inset-bottom, 0px);
   --ai-safe-left: env(safe-area-inset-left, 0px);
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2147483640;
+  color: #fff;
+  font-family: 'Segoe UI', sans-serif;
+  font-size: 12px;
 }
 
-body.ai-panel-open {
-  overflow: hidden;
-  touch-action: none;
+.ai-root *,
+.ai-root *::before,
+.ai-root *::after {
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+#aiPanel,
+#aiPanelToggle {
+  pointer-events: auto;
+}
+
+#aiSnipOverlay.active {
+  pointer-events: auto;
 }
 
 #aiPanel {
@@ -197,7 +272,6 @@ body.ai-panel-open {
   z-index: 2147483640;
   padding: 14px;
   border-radius: 16px;
-  font-family: 'Segoe UI', sans-serif;
   box-shadow: 0 12px 32px rgba(0,0,0,0.35);
   display: none;
   cursor: default;
@@ -283,13 +357,6 @@ body.ai-panel-open {
   font-size: 11px;
   color: #ccc;
   margin-bottom: 4px;
-}
-
-#aiPanel input,
-#aiPanel textarea,
-#aiPanel select,
-#aiPanel button {
-  font-family: inherit;
 }
 
 #aiPanel input,
@@ -404,6 +471,7 @@ body.ai-panel-open {
   display: none;
   cursor: crosshair;
   touch-action: none;
+  pointer-events: none;
 }
 
 #aiSnipBox {
@@ -480,15 +548,8 @@ body.ai-panel-open {
   bottom: calc(20px + var(--ai-safe-bottom));
   right: calc(20px + var(--ai-safe-right));
 }
-
-@media (min-width: 641px) {
-  body.ai-panel-open {
-    overflow: auto;
-    touch-action: auto;
-  }
-}
     `;
-    document.head.appendChild(style);
+    shadowRoot.appendChild(style);
   }
 
   function attachEventHandlers() {
@@ -633,16 +694,16 @@ body.ai-panel-open {
         checkApiKey(true);
       }
       if (state.isMobile) {
-        document.body.classList.add('ai-panel-open');
+        lockScroll();
         ui.panel.scrollTop = 0;
       } else {
-        document.body.classList.remove('ai-panel-open');
+        unlockScroll();
         if (!currentlyVisible) {
           clampPanelPosition();
         }
       }
     } else {
-      document.body.classList.remove('ai-panel-open');
+      unlockScroll();
     }
 
     applyStealthState();
@@ -680,6 +741,11 @@ body.ai-panel-open {
     const shouldHidePanel = state.stealth && !ui.panel.classList.contains('show');
     ui.panel.classList.toggle('stealth-hidden', shouldHidePanel);
     ui.toggle.classList.toggle('stealth', state.stealth);
+    if (state.stealth && !ui.panel.classList.contains('show')) {
+      ui.toggle.textContent = '';
+    } else if (!ui.toggle.textContent.trim()) {
+      ui.toggle.textContent = 'AI';
+    }
     ui.toggle.setAttribute(
       'aria-label',
       state.stealth ? 'Giữ để hiện trợ lý' : 'Mở trợ lý AI'
@@ -705,10 +771,10 @@ body.ai-panel-open {
       ui.panel.style.left = '';
       ui.panel.style.top = '';
       if (ui.panel.classList.contains('show')) {
-        document.body.classList.add('ai-panel-open');
+        lockScroll();
       }
     } else {
-      document.body.classList.remove('ai-panel-open');
+      unlockScroll();
       if (state.savedPosition) {
         if (state.savedPosition.left) ui.panel.style.left = state.savedPosition.left;
         if (state.savedPosition.top) ui.panel.style.top = state.savedPosition.top;
@@ -832,6 +898,7 @@ body.ai-panel-open {
   function startSelectionMode() {
     state.selecting = true;
     ui.overlay.style.display = 'block';
+    ui.overlay.classList.add('active');
     ui.snipBox.style.display = 'none';
     hideInterface();
   }
@@ -881,6 +948,7 @@ body.ai-panel-open {
   async function finalizeSelection() {
     state.selecting = false;
     ui.overlay.style.display = 'none';
+    ui.overlay.classList.remove('active');
     ui.snipBox.style.display = 'none';
 
     const width = Math.abs(state.endX - state.startX);
@@ -904,6 +972,7 @@ body.ai-panel-open {
   function cancelSelection() {
     state.selecting = false;
     ui.overlay.style.display = 'none';
+    ui.overlay.classList.remove('active');
     ui.snipBox.style.display = 'none';
     showInterface();
   }
@@ -912,9 +981,17 @@ body.ai-panel-open {
     ui.imgBox.innerHTML = '🕐 Đang chụp ảnh...';
     ui.ansBox.textContent = '';
     try {
-      const screenshot = await requestScreenshot();
-      const base64 = await cropImage(screenshot, region);
-      ui.imgBox.innerHTML = `<img src="data:image/jpeg;base64,${base64}" alt="Đoạn chụp" />`;
+      const result = await getScreenshot({ region });
+      let base64;
+      let previewUrl;
+      if (result.canvas) {
+        base64 = cropFromCanvas(result.canvas, region);
+        previewUrl = `data:image/jpeg;base64,${base64}`;
+      } else {
+        base64 = await cropImage(result.dataUrl, region);
+        previewUrl = `data:image/jpeg;base64,${base64}`;
+      }
+      ui.imgBox.innerHTML = `<img src="${previewUrl}" alt="Đoạn chụp" />`;
       const prompt = createPrompt(true);
       if (prompt) {
         await sendToGemini(prompt, base64);
@@ -931,9 +1008,10 @@ body.ai-panel-open {
     ui.imgBox.innerHTML = '🕐 Đang chụp ảnh...';
     ui.ansBox.textContent = '';
     try {
-      const screenshot = await requestScreenshot();
-      const base64 = screenshot.split(',')[1];
-      ui.imgBox.innerHTML = `<img src="${screenshot}" alt="Ảnh chụp" />`;
+      const result = await getScreenshot();
+      const dataUrl = result.dataUrl;
+      const base64 = dataUrl.split(',')[1];
+      ui.imgBox.innerHTML = `<img src="${dataUrl}" alt="Ảnh chụp" />`;
       const prompt = createPrompt(true);
       if (prompt) {
         await sendToGemini(prompt, base64);
@@ -943,6 +1021,26 @@ body.ai-panel-open {
     } finally {
       showInterface();
     }
+  }
+
+  function lockScroll() {
+    if (state.scrollLock) return;
+    state.scrollLock = {
+      bodyOverflow: document.body.style.overflow,
+      docOverflow: document.documentElement.style.overflow,
+      bodyTouch: document.body.style.touchAction
+    };
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+  }
+
+  function unlockScroll() {
+    if (!state.scrollLock) return;
+    document.documentElement.style.overflow = state.scrollLock.docOverflow || '';
+    document.body.style.overflow = state.scrollLock.bodyOverflow || '';
+    document.body.style.touchAction = state.scrollLock.bodyTouch || '';
+    state.scrollLock = null;
   }
 
   function hideInterface() {
@@ -976,32 +1074,134 @@ body.ai-panel-open {
     });
   }
 
+  async function getScreenshot(_options = {}) {
+    try {
+      const dataUrl = await requestScreenshot();
+      if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image')) {
+        throw new Error('Ảnh trả về không hợp lệ.');
+      }
+      return { dataUrl, canvas: null };
+    } catch (nativeError) {
+      const fallback = await captureWithHtml2Canvas();
+      if (!fallback || !fallback.dataUrl) {
+        if (nativeError instanceof Error) throw nativeError;
+        throw new Error('Không thể chụp màn hình.');
+      }
+      return { dataUrl: fallback.dataUrl, canvas: fallback.canvas, fallback: true };
+    }
+  }
+
   function cropImage(dataUrl, region) {
     return new Promise((resolve, reject) => {
       const image = new Image();
       image.onload = () => {
         const scaleX = image.naturalWidth / window.innerWidth;
         const scaleY = image.naturalHeight / window.innerHeight;
+        const sx = Math.max(0, Math.round(region.x * scaleX));
+        const sy = Math.max(0, Math.round(region.y * scaleY));
+        const sw = Math.min(image.naturalWidth - sx, Math.round(region.width * scaleX));
+        const sh = Math.min(image.naturalHeight - sy, Math.round(region.height * scaleY));
         const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(region.width * scaleX));
-        canvas.height = Math.max(1, Math.round(region.height * scaleY));
+        canvas.width = Math.max(1, sw);
+        canvas.height = Math.max(1, sh);
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(
-          image,
-          Math.round(region.x * scaleX),
-          Math.round(region.y * scaleY),
-          Math.round(region.width * scaleX),
-          Math.round(region.height * scaleY),
-          0,
-          0,
-          canvas.width,
-          canvas.height
-        );
+        ctx.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
         resolve(canvas.toDataURL('image/jpeg', 0.9).split(',')[1]);
       };
       image.onerror = () => reject(new Error('Không thể xử lý ảnh đã chụp.'));
       image.src = dataUrl;
     });
+  }
+
+  function cropFromCanvas(canvas, region) {
+    if (!canvas) {
+      throw new Error('Không thể xử lý ảnh đã chụp.');
+    }
+    const scaleX = canvas.width / window.innerWidth;
+    const scaleY = canvas.height / window.innerHeight;
+    const sx = Math.max(0, Math.round(region.x * scaleX));
+    const sy = Math.max(0, Math.round(region.y * scaleY));
+    const sw = Math.min(canvas.width - sx, Math.round(region.width * scaleX));
+    const sh = Math.min(canvas.height - sy, Math.round(region.height * scaleY));
+    const output = document.createElement('canvas');
+    output.width = Math.max(1, sw);
+    output.height = Math.max(1, sh);
+    const ctx = output.getContext('2d');
+    ctx.drawImage(
+      canvas,
+      sx,
+      sy,
+      sw,
+      sh,
+      0,
+      0,
+      output.width,
+      output.height
+    );
+    return output.toDataURL('image/jpeg', 0.9).split(',')[1];
+  }
+
+  async function captureWithHtml2Canvas() {
+    const html2canvas = await ensureHtml2Canvas();
+    if (typeof html2canvas !== 'function') {
+      throw new Error('Không thể tải công cụ chụp ảnh.');
+    }
+    const dpr = Math.min(2.5, window.devicePixelRatio || 1);
+    const canvas = await html2canvas(document.body || document.documentElement, {
+      backgroundColor: null,
+      useCORS: true,
+      allowTaint: true,
+      scale: dpr,
+      windowWidth: window.innerWidth,
+      windowHeight: window.innerHeight,
+      scrollX: window.scrollX,
+      scrollY: window.scrollY
+    });
+    return { canvas, dataUrl: canvas.toDataURL('image/jpeg', 0.9) };
+  }
+
+  async function ensureHtml2Canvas() {
+    if (state.html2CanvasReady && typeof window.html2canvas === 'function') {
+      return window.html2canvas;
+    }
+    if (state.html2CanvasLoading) {
+      return state.html2CanvasLoading;
+    }
+
+    const loader = new Promise((resolve, reject) => {
+      if (typeof window.html2canvas === 'function') {
+        state.html2CanvasReady = true;
+        resolve(window.html2canvas);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = HTML2CANVAS_URL;
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      script.referrerPolicy = 'no-referrer';
+      script.setAttribute(randomId('data'), randomId('v'));
+      script.onload = () => {
+        if (typeof window.html2canvas === 'function') {
+          state.html2CanvasReady = true;
+          resolve(window.html2canvas);
+        } else {
+          reject(new Error('Không thể tải công cụ chụp ảnh.'));
+        }
+      };
+      script.onerror = () => reject(new Error('Không thể tải công cụ chụp ảnh.'));
+      (document.head || document.documentElement).appendChild(script);
+    })
+      .then((fn) => {
+        state.html2CanvasLoading = null;
+        return fn;
+      })
+      .catch((error) => {
+        state.html2CanvasLoading = null;
+        throw error;
+      });
+
+    state.html2CanvasLoading = loader;
+    return loader;
   }
 
   function createPrompt(isImage) {
