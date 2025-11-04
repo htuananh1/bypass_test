@@ -51,6 +51,29 @@ body {
   backdrop-filter: blur(6px);
 }
 
+.subject-hint {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(0, 210, 211, 0.12);
+  border: 1px solid rgba(0, 210, 211, 0.2);
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.subject-hint[data-state='detected'] {
+  color: #00d2d3;
+  background: rgba(0, 210, 211, 0.18);
+  border-color: rgba(0, 210, 211, 0.35);
+}
+
+.subject-hint[data-state='pending'] {
+  color: #feca57;
+  background: rgba(254, 202, 87, 0.12);
+  border-color: rgba(254, 202, 87, 0.24);
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

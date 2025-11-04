@@ -5,7 +5,8 @@ Một Chrome Extension (Manifest V3) giúp lấy nhanh nội dung bài tập b�
 ## Tính năng chính
 - Tự động lấy văn bản đang được bôi đen; nếu không có, sẽ đọc thông minh nội dung trong ô nhập/text editor đang focus.
 - Gọi trực tiếp endpoint `https://ai-gateway.vercel.sh/v1/chat/completions` từ service worker, không cần proxy phụ trợ.
-- Bộ prompt chuẩn (chỉ đáp án hoặc giải chi tiết) yêu cầu GPT tự nhận diện môn học và luôn chèn đoạn mã Python mẫu sử dụng `openai` với AI Gateway (import `os` và `OpenAI`).
+- Bộ prompt chuẩn (chỉ đáp án hoặc giải chi tiết) tự động chèn tên môn học gợi ý từ hệ thống (dựa trên phân tích từ khoá) và luôn yêu cầu GPT xác nhận kèm đoạn mã Python mẫu sử dụng `openai` với AI Gateway (import `os` và `OpenAI`).
+- Hiển thị "Môn học gợi ý" ngay dưới vùng văn bản để người dùng biết hệ thống đang suy luận gì trước khi gửi GPT.
 - Chọn nhanh model GPT và ngôn ngữ trả lời ngay trong popup.
 - Bộ nhớ đệm theo `hash(question + cấu hình)` bằng `chrome.storage.local`, có thể bật/tắt.
 - Giới hạn tốc độ: tối thiểu 1 yêu cầu / 5 giây, có thể bỏ qua thủ công nếu cần.
@@ -18,8 +19,8 @@ Một Chrome Extension (Manifest V3) giúp lấy nhanh nội dung bài tập b�
 4. Mở popup của extension, nhập AI Gateway API key (Bearer token) trong ô **API key**.
 5. Chọn model mong muốn (ví dụ `openai/gpt-oss-120b`, `openai/gpt-4o-mini`, `openai/gpt-oss-mini`).
 6. Nhấn **Lưu API key** để lưu vào `chrome.storage.sync`.
-7. Bôi đen câu hỏi trên trang → mở popup (hoặc nhấn **Lấy lại vùng chọn** nếu popup đang mở).
-8. Chọn chế độ "Chỉ đáp án" (thêm dòng nhận diện môn + đáp án) hoặc "Giải thích chi tiết", cùng ngôn ngữ mong muốn.
+7. Bôi đen câu hỏi trên trang → mở popup (hoặc nhấn **Lấy lại vùng chọn** nếu popup đang mở). Kiểm tra dòng "Môn học gợi ý" xem hệ thống dự đoán đúng chưa.
+8. Chọn chế độ "Chỉ đáp án" (thêm dòng môn học + đáp án) hoặc "Giải thích chi tiết", cùng ngôn ngữ mong muốn.
 9. Nhấn **Gửi GPT** để lấy kết quả. Có thể bật **Bật cache đáp án** để lưu kết quả cho lần gọi sau.
 10. Nhấn **Copy** để sao chép câu trả lời vào clipboard.
 

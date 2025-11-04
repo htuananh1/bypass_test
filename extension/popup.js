@@ -16,6 +16,7 @@ const clearResultBtn = document.getElementById('clearResult');
 const resultSection = document.getElementById('resultSection');
 const resultOutput = document.getElementById('resultOutput');
 const toggleLangBtn = document.getElementById('btnToggleLang');
+const subjectHint = document.getElementById('subjectHint');
 
 const STORAGE_KEY = 'aiGatewayHomeworkSolver';
 const GATEWAY_SNIPPET = `import os
@@ -36,6 +37,144 @@ response = client.chat.completions.create(
   ]
 )`;
 const GATEWAY_SNIPPET_BLOCK = '```python\n' + GATEWAY_SNIPPET + '\n```';
+
+const SUBJECT_CATEGORIES = [
+  {
+    name: 'Toán học',
+    keywords: [
+      'toán',
+      'phương trình',
+      'hàm số',
+      'giải hệ',
+      'đạo hàm',
+      'tích phân',
+      'hình học',
+      'lim',
+      'equation',
+      'algebra',
+      'geometry',
+      'integral',
+      'derivative'
+    ]
+  },
+  {
+    name: 'Vật lý',
+    keywords: [
+      'vật lý',
+      'lực',
+      'gia tốc',
+      'điện trường',
+      'động năng',
+      'cơ học',
+      'quang học',
+      'physics',
+      'velocity',
+      'energy',
+      'momentum',
+      'electric field'
+    ]
+  },
+  {
+    name: 'Hóa học',
+    keywords: [
+      'hóa học',
+      'hóa trị',
+      'phản ứng',
+      'mol',
+      'cân bằng phương trình',
+      'axit',
+      'bazơ',
+      'chemistry',
+      'molecule',
+      'stoichiometry',
+      'oxidation'
+    ]
+  },
+  {
+    name: 'Sinh học',
+    keywords: [
+      'sinh học',
+      'tế bào',
+      'di truyền',
+      'hormone',
+      'DNA',
+      'RNA',
+      'enzyme',
+      'biology',
+      'organism',
+      'photosynthesis'
+    ]
+  },
+  {
+    name: 'Tin học',
+    keywords: [
+      'lập trình',
+      'thuật toán',
+      'python',
+      'java',
+      'c++',
+      'mã giả',
+      'complexity',
+      'binary',
+      'computer science',
+      'data structure',
+      'code'
+    ]
+  },
+  {
+    name: 'Ngữ văn',
+    keywords: [
+      'nghị luận',
+      'văn học',
+      'phân tích tác phẩm',
+      'nhân vật',
+      'thơ',
+      'bài văn',
+      'literature',
+      'essay',
+      'character analysis'
+    ]
+  },
+  {
+    name: 'Lịch sử',
+    keywords: [
+      'lịch sử',
+      'chiến tranh',
+      'triều đại',
+      'cách mạng',
+      'history',
+      'revolution',
+      'dynasty',
+      'historical'
+    ]
+  },
+  {
+    name: 'Địa lý',
+    keywords: [
+      'địa lý',
+      'khí hậu',
+      'địa hình',
+      'bản đồ',
+      'dân số',
+      'geography',
+      'climate',
+      'population',
+      'terrain'
+    ]
+  },
+  {
+    name: 'Tiếng Anh',
+    keywords: [
+      'grammar',
+      'dịch',
+      'vocabulary',
+      'rewrite the sentence',
+      'english',
+      'từ vựng',
+      'ngữ pháp'
+    ]
+  }
+];
 
 let isPasswordVisible = false;
 
@@ -69,9 +208,12 @@ function bindEvents() {
     langSelect.value = current === 'vi' ? 'en' : 'vi';
   });
 
-  refreshSelectionBtn.addEventListener('click', populateSelection);
+  refreshSelectionBtn.addEventListener('click', async () => {
+    await populateSelection();
+  });
   clearQuestionBtn.addEventListener('click', () => {
     questionInput.value = '';
+    updateSubjectHint();
   });
 
   solveButton.addEventListener('click', onSolveClick);
@@ -80,6 +222,8 @@ function bindEvents() {
     resultSection.hidden = true;
     resultOutput.textContent = '';
   });
+
+  questionInput.addEventListener('input', updateSubjectHint);
 
   apiKeyInput.addEventListener('change', () => {
     if (!apiKeyInput.value.trim()) {
@@ -137,6 +281,7 @@ async function populateSelection() {
   if (selection) {
     questionInput.value = selection;
   }
+  updateSubjectHint();
 }
 
 async function getCurrentSelection() {
@@ -226,12 +371,79 @@ function buildPrompt(question) {
   const mode = outputModeSelect.value;
   const lang = langSelect.value;
   const langName = lang === 'vi' ? 'Tiếng Việt' : 'English';
+  const subject = detectSubject(question);
+  const subjectLine = subject ? `Môn học gợi ý: ${subject}` : 'Môn học gợi ý: Chưa xác định';
 
   if (mode === 'answer') {
-    return `Bạn là trợ giảng AI hỗ trợ học sinh. Tự nhận diện môn học phù hợp với nội dung bài tập bên dưới. Trả lời theo định dạng:\nMôn học: <tên môn học bạn suy luận>\nĐáp án: <đáp án cuối cùng bằng ${langName}>\n\nKhông thêm giải thích hoặc Markdown.\n\nBài tập:\n${question}\n\nSau phần trả lời, chèn nguyên văn đoạn mã Python sau để học sinh tái sử dụng GPT qua AI Gateway:\n\n${GATEWAY_SNIPPET_BLOCK}`;
+    return `Bạn là trợ giảng AI hỗ trợ học sinh. Dựa trên gợi ý ${subjectLine.toLowerCase()}, xác nhận hoặc điều chỉnh môn học trước khi đưa ra đáp án cuối cùng bằng ${langName}.\n\nĐịnh dạng bắt buộc:\n${subjectLine}\nĐáp án: <đáp án cuối cùng bằng ${langName}>\n\nKhông thêm giải thích hoặc Markdown.\n\nBài tập:\n${question}\n\nSau phần trả lời, chèn nguyên văn đoạn mã Python sau để học sinh tái sử dụng GPT qua AI Gateway:\n\n${GATEWAY_SNIPPET_BLOCK}`;
   }
 
-  return `Bạn là gia sư AI thông minh. Hãy tự nhận diện môn học phù hợp, ghi rõ môn học ở đầu câu trả lời. Phân tích bài tập theo từng bước, giải thích rõ giả thiết, công thức và đưa ra kết luận bằng ${langName}.\n\nBài tập:\n${question}\n\nKết thúc phần giải thích bằng việc chèn nguyên văn đoạn mã Python sau để học sinh tái sử dụng GPT qua AI Gateway:\n\n${GATEWAY_SNIPPET_BLOCK}`;
+  return `Bạn là gia sư AI thông minh. ${subjectLine}. Nếu cần hãy điều chỉnh tên môn học cho chính xác rồi phân tích bài tập theo từng bước, giải thích rõ giả thiết, công thức và đưa ra kết luận bằng ${langName}.\n\nBài tập:\n${question}\n\nKết thúc phần giải thích bằng việc chèn nguyên văn đoạn mã Python sau để học sinh tái sử dụng GPT qua AI Gateway:\n\n${GATEWAY_SNIPPET_BLOCK}`;
+}
+
+function detectSubject(rawText) {
+  const text = normalizeText(rawText);
+  if (!text) {
+    return '';
+  }
+
+  let bestMatch = { name: '', score: 0 };
+
+  for (const category of SUBJECT_CATEGORIES) {
+    let score = 0;
+    for (const keyword of category.keywords) {
+      const normalizedKeyword = normalizeText(keyword);
+      if (!normalizedKeyword) continue;
+      if (text.includes(normalizedKeyword)) {
+        score += normalizedKeyword.split(' ').length;
+      }
+    }
+
+    if (score > bestMatch.score) {
+      bestMatch = { name: category.name, score };
+    }
+  }
+
+  if (bestMatch.score === 0) {
+    return '';
+  }
+
+  return bestMatch.name;
+}
+
+function normalizeText(value) {
+  return (value || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^\p{Letter}\p{Number}\s]/gu, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function updateSubjectHint() {
+  if (!subjectHint) {
+    return;
+  }
+
+  const question = questionInput.value.trim();
+  const subject = detectSubject(question);
+
+  if (!question) {
+    subjectHint.textContent = 'Môn học gợi ý: (đang chờ văn bản)';
+    subjectHint.dataset.state = 'idle';
+    return;
+  }
+
+  if (!subject) {
+    subjectHint.textContent = 'Môn học gợi ý: Chưa xác định rõ — AI sẽ suy luận thêm.';
+    subjectHint.dataset.state = 'pending';
+    return;
+  }
+
+  subjectHint.textContent = `Môn học gợi ý: ${subject}`;
+  subjectHint.dataset.state = 'detected';
 }
 
 async function handleCopyResult() {
