@@ -3,12 +3,9 @@ const apiKeyInput = document.getElementById('apiKeyInput');
 const toggleApiKey = document.getElementById('toggleApiKey');
 const saveApiKeyBtn = document.getElementById('saveApiKey');
 const modelSelect = document.getElementById('modelSelect');
-const subjectSelect = document.getElementById('subjectSelect');
 const outputModeSelect = document.getElementById('outputMode');
 const langSelect = document.getElementById('langSelect');
 const questionInput = document.getElementById('questionInput');
-const customPromptSection = document.getElementById('customPromptSection');
-const customPromptInput = document.getElementById('customPrompt');
 const cacheToggle = document.getElementById('cacheToggle');
 const bypassRateLimitToggle = document.getElementById('bypassRateLimit');
 const solveButton = document.getElementById('solveButton');
@@ -20,7 +17,25 @@ const resultSection = document.getElementById('resultSection');
 const resultOutput = document.getElementById('resultOutput');
 const toggleLangBtn = document.getElementById('btnToggleLang');
 
-const STORAGE_KEY = 'geminiHomeworkSolver';
+const STORAGE_KEY = 'aiGatewayHomeworkSolver';
+const GATEWAY_SNIPPET = `import os
+from openai import OpenAI
+
+client = OpenAI(
+  api_key=os.getenv('AI_GATEWAY_API_KEY'),
+  base_url='https://ai-gateway.vercel.sh/v1'
+)
+
+response = client.chat.completions.create(
+  model='openai/gpt-oss-120b',
+  messages=[
+    {
+      'role': 'user',
+      'content': 'Why is the sky blue?'
+    }
+  ]
+)`;
+const GATEWAY_SNIPPET_BLOCK = '```python\n' + GATEWAY_SNIPPET + '\n```';
 
 let isPasswordVisible = false;
 
@@ -49,11 +64,6 @@ function bindEvents() {
       .catch(error => setStatus(error.message || 'Lỗi lưu API key.', 'error'));
   });
 
-  outputModeSelect.addEventListener('change', () => {
-    const isCustom = outputModeSelect.value === 'custom';
-    customPromptSection.hidden = !isCustom;
-  });
-
   toggleLangBtn.addEventListener('click', () => {
     const current = langSelect.value;
     langSelect.value = current === 'vi' ? 'en' : 'vi';
@@ -73,7 +83,7 @@ function bindEvents() {
 
   apiKeyInput.addEventListener('change', () => {
     if (!apiKeyInput.value.trim()) {
-      setStatus('Chưa có API key', 'warning');
+      setStatus('Chưa có API key AI Gateway', 'warning');
     }
   });
 }
@@ -87,29 +97,26 @@ async function loadSettings() {
     apiKeyInput.value = stored.apiKey;
     setStatus('Sẵn sàng', 'success');
   } else {
-    setStatus('Chưa có API key', 'warning');
+    setStatus('Chưa có API key AI Gateway', 'warning');
   }
 
-  modelSelect.value = stored.model || modelSelect.value;
-  subjectSelect.value = stored.subject || subjectSelect.value;
+  if (stored.model && Array.from(modelSelect.options).some(option => option.value === stored.model)) {
+    modelSelect.value = stored.model;
+  }
   outputModeSelect.value = stored.outputMode || outputModeSelect.value;
   langSelect.value = stored.lang || langSelect.value;
   cacheToggle.checked = stored.cacheEnabled ?? true;
   bypassRateLimitToggle.checked = stored.bypassRateLimit ?? false;
-  customPromptInput.value = stored.customPrompt || '';
-  customPromptSection.hidden = outputModeSelect.value !== 'custom';
 }
 
 async function saveSettings(partial) {
   const next = {
     apiKey: apiKeyInput.value.trim(),
     model: modelSelect.value,
-    subject: subjectSelect.value,
     outputMode: outputModeSelect.value,
     lang: langSelect.value,
     cacheEnabled: cacheToggle.checked,
     bypassRateLimit: bypassRateLimitToggle.checked,
-    customPrompt: customPromptInput.value.trim(),
     ...partial
   };
 
@@ -172,18 +179,18 @@ async function onSolveClick() {
     return;
   }
 
-  const cacheKey = await hashString(`${question}|${modelSelect.value}|${outputModeSelect.value}|${langSelect.value}|${subjectSelect.value}|${customPromptInput.value.trim()}`);
+  const cacheKey = await hashString(`${question}|${modelSelect.value}|${outputModeSelect.value}|${langSelect.value}`);
 
   setLoading(true);
-  setStatus('Đang gửi đến Gemini...', 'warning');
+  setStatus('Đang gửi đến GPT (AI Gateway)...', 'warning');
 
   try {
     const response = await chrome.runtime.sendMessage({
-      type: 'SOLVE_WITH_GEMINI',
+      type: 'SOLVE_WITH_GPT',
       payload: {
         apiKey,
         model: modelSelect.value,
-        promptParts: [{ text: prompt }],
+        prompt,
         cacheKey,
         useCache: cacheToggle.checked,
         bypassRateLimit: bypassRateLimitToggle.checked
@@ -205,11 +212,11 @@ async function onSolveClick() {
     if (response.fromCache) {
       setStatus('Trả lời từ bộ nhớ đệm.', 'success');
     } else {
-      setStatus('Đã nhận phản hồi từ Gemini.', 'success');
+      setStatus('Đã nhận phản hồi từ GPT.', 'success');
     }
   } catch (error) {
     console.error('Solve error', error);
-    setStatus(error.message || 'Lỗi gửi yêu cầu Gemini.', 'error');
+    setStatus(error.message || 'Lỗi gửi yêu cầu GPT.', 'error');
   } finally {
     setLoading(false);
   }
@@ -217,24 +224,14 @@ async function onSolveClick() {
 
 function buildPrompt(question) {
   const mode = outputModeSelect.value;
-  const subject = subjectSelect.value;
   const lang = langSelect.value;
   const langName = lang === 'vi' ? 'Tiếng Việt' : 'English';
 
-  if (mode === 'custom') {
-    const customText = customPromptInput.value.trim();
-    if (!customText) {
-      setStatus('Vui lòng nhập yêu cầu tùy chỉnh.', 'error');
-      return null;
-    }
-    return `${customText}\n\nNội dung bài tập:\n${question}\n\nHãy trả lời bằng ${langName}.`;
-  }
-
   if (mode === 'answer') {
-    return `Bạn là trợ giảng môn ${subject}. Chỉ đưa ra đáp án cuối cùng bằng ${langName}, không giải thích, không dùng Markdown.\n\nBài tập:\n${question}`;
+    return `Bạn là trợ giảng AI hỗ trợ học sinh. Tự nhận diện môn học phù hợp với nội dung bài tập bên dưới. Trả lời theo định dạng:\nMôn học: <tên môn học bạn suy luận>\nĐáp án: <đáp án cuối cùng bằng ${langName}>\n\nKhông thêm giải thích hoặc Markdown.\n\nBài tập:\n${question}\n\nSau phần trả lời, chèn nguyên văn đoạn mã Python sau để học sinh tái sử dụng GPT qua AI Gateway:\n\n${GATEWAY_SNIPPET_BLOCK}`;
   }
 
-  return `Bạn là gia sư môn ${subject}. Hãy phân tích bài tập sau theo từng bước, làm rõ giả thiết, công thức, và đưa ra kết luận cuối cùng. Trả lời bằng ${langName}.\n\nBài tập:\n${question}`;
+  return `Bạn là gia sư AI thông minh. Hãy tự nhận diện môn học phù hợp, ghi rõ môn học ở đầu câu trả lời. Phân tích bài tập theo từng bước, giải thích rõ giả thiết, công thức và đưa ra kết luận bằng ${langName}.\n\nBài tập:\n${question}\n\nKết thúc phần giải thích bằng việc chèn nguyên văn đoạn mã Python sau để học sinh tái sử dụng GPT qua AI Gateway:\n\n${GATEWAY_SNIPPET_BLOCK}`;
 }
 
 async function handleCopyResult() {

@@ -3,23 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gemini Homework Solver</title>
+    <title>AI Gateway GPT Solver</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <main class="panel">
       <header class="panel__header">
         <div>
-          <h1>Gemini Homework Solver</h1>
-          <p class="panel__status" id="statusText">Chưa có API key</p>
+          <h1>AI Gateway GPT Solver</h1>
+          <p class="panel__status" id="statusText">Chưa có API key AI Gateway</p>
         </div>
         <button id="btnToggleLang" type="button" class="ghost" title="Đổi ngôn ngữ">🌐</button>
       </header>
 
       <section class="panel__section">
-        <label class="field__label" for="apiKeyInput">Gemini API key</label>
+        <label class="field__label" for="apiKeyInput">AI Gateway API key</label>
         <div class="api-field">
-          <input id="apiKeyInput" type="password" autocomplete="off" placeholder="AIza..." />
+          <input id="apiKeyInput" type="password" autocomplete="off" placeholder="sk-..." />
           <button id="toggleApiKey" type="button" class="ghost" title="Ẩn/hiện key">👁️</button>
         </div>
         <button id="saveApiKey" type="button" class="primary">Lưu API key</button>
@@ -35,44 +35,30 @@
       </section>
 
       <section class="panel__section grid">
-        <label class="field__label" for="modelSelect">Model</label>
-        <select id="modelSelect">
-          <option value="gemini-flash-latest">⚡ Gemini Flash</option>
-          <option value="gemini-2.0-flash">⚡ Gemini 2.0 Flash</option>
-          <option value="gemini-2.5-pro">✨ Gemini 2.5 Pro</option>
-        </select>
+        <div class="grid__field">
+          <label class="field__label" for="modelSelect">Model</label>
+          <select id="modelSelect">
+            <option value="openai/gpt-oss-mini">⚡ GPT OSS Mini</option>
+            <option value="openai/gpt-4o-mini">⚡ GPT-4o Mini</option>
+            <option value="openai/gpt-oss-120b" selected>✨ GPT OSS 120B</option>
+          </select>
+        </div>
 
-        <label class="field__label" for="subjectSelect">Môn học</label>
-        <select id="subjectSelect">
-          <option value="Toán">Toán</option>
-          <option value="Vật lý">Vật lý</option>
-          <option value="Hóa học">Hóa học</option>
-          <option value="Sinh học">Sinh học</option>
-          <option value="Lịch sử">Lịch sử</option>
-          <option value="Địa lý">Địa lý</option>
-          <option value="Ngữ văn">Ngữ văn</option>
-          <option value="Tiếng Anh">Tiếng Anh</option>
-          <option value="GDCD">GDCD</option>
-          <option value="Tin học">Tin học</option>
-        </select>
+        <div class="grid__field">
+          <label class="field__label" for="outputMode">Định dạng</label>
+          <select id="outputMode">
+            <option value="answer">Chỉ đáp án</option>
+            <option value="explain" selected>Giải thích chi tiết</option>
+          </select>
+        </div>
 
-        <label class="field__label" for="outputMode">Định dạng</label>
-        <select id="outputMode">
-          <option value="answer">Chỉ đáp án</option>
-          <option value="explain" selected>Giải thích chi tiết</option>
-          <option value="custom">Tùy chỉnh</option>
-        </select>
-
-        <label class="field__label" for="langSelect">Ngôn ngữ</label>
-        <select id="langSelect">
-          <option value="vi" selected>Tiếng Việt</option>
-          <option value="en">English</option>
-        </select>
-      </section>
-
-      <section class="panel__section" id="customPromptSection" hidden>
-        <label class="field__label" for="customPrompt">Yêu cầu tùy chỉnh</label>
-        <textarea id="customPrompt" rows="3" placeholder="Ví dụ: Tóm tắt nội dung bài toán..."></textarea>
+        <div class="grid__field">
+          <label class="field__label" for="langSelect">Ngôn ngữ</label>
+          <select id="langSelect">
+            <option value="vi" selected>Tiếng Việt</option>
+            <option value="en">English</option>
+          </select>
+        </div>
       </section>
 
       <section class="panel__section flags">
@@ -88,7 +74,7 @@
         </label>
       </section>
 
-      <button id="solveButton" type="button" class="primary">🚀 Gửi Gemini</button>
+      <button id="solveButton" type="button" class="primary">🚀 Gửi GPT</button>
 
       <section class="panel__section result" id="resultSection" hidden>
         <header class="result__header">

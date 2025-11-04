@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Gemini Homework Solver",
-  "description": "Giải bài tập với Gemini bằng cách lấy nhanh văn bản được bôi đen và sinh lời giải theo mẫu chuẩn.",
+  "name": "AI Gateway GPT Solver",
+  "description": "Giải bài tập với GPT qua AI Gateway Vercel, tự động lấy vùng chọn và sinh lời giải kèm mã mẫu.",
   "version": "1.0.0",
   "permissions": [
     "storage",
@@ -10,10 +10,10 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://generativelanguage.googleapis.com/*"
+    "https://ai-gateway.vercel.sh/*"
   ],
   "action": {
-    "default_title": "Gemini Homework Solver",
+    "default_title": "AI Gateway GPT Solver",
     "default_popup": "popup.html"
   },
   "background": {

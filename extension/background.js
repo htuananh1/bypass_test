@@ -1,19 +1,18 @@
 const RATE_LIMIT_MS = 5000;
-const CACHE_PREFIX = 'gemini-cache:';
-const DEFAULT_GENERATION_CONFIG = {
-  temperature: 0.2,
-  topP: 0.95,
-  topK: 40
+const CACHE_PREFIX = 'gpt-cache:';
+const API_BASE_URL = 'https://ai-gateway.vercel.sh/v1';
+const DEFAULT_CHAT_CONFIG = {
+  temperature: 0.2
 };
 
 let lastRequestAt = 0;
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type === 'SOLVE_WITH_GEMINI') {
+  if (message?.type === 'SOLVE_WITH_GPT') {
     handleSolveRequest(message.payload)
       .then(sendResponse)
       .catch(error => {
-        console.error('Gemini solve error:', error);
+        console.error('AI Gateway solve error:', error);
         sendResponse({ ok: false, error: error.message || 'Unknown error' });
       });
     return true;
@@ -27,12 +26,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
-async function handleSolveRequest({ apiKey, model, promptParts, cacheKey, useCache, bypassRateLimit }) {
+async function handleSolveRequest({ apiKey, model, prompt, cacheKey, useCache, bypassRateLimit }) {
   if (!apiKey) {
-    throw new Error('Thiếu API key Gemini. Hãy nhập trong popup.');
+    throw new Error('Thiếu API key AI Gateway. Hãy nhập trong popup.');
   }
 
-  if (!Array.isArray(promptParts) || promptParts.length === 0) {
+  if (typeof prompt !== 'string' || !prompt.trim()) {
     throw new Error('Prompt không hợp lệ.');
   }
 
@@ -53,22 +52,35 @@ async function handleSolveRequest({ apiKey, model, promptParts, cacheKey, useCac
     }
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const url = `${API_BASE_URL}/chat/completions`;
 
   const body = JSON.stringify({
-    contents: [{ parts: promptParts }],
-    generationConfig: DEFAULT_GENERATION_CONFIG
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: 'Bạn là gia sư thông minh chuyên giải bài tập, trả lời bằng ngôn ngữ đã yêu cầu.'
+      },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ],
+    ...DEFAULT_CHAT_CONFIG
   });
 
   let response;
   try {
     response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
       body
     });
   } catch (error) {
-    throw new Error('Không thể kết nối tới Gemini. Kiểm tra mạng hoặc quyền truy cập.');
+    throw new Error('Không thể kết nối tới AI Gateway. Kiểm tra mạng hoặc quyền truy cập.');
   }
 
   lastRequestAt = Date.now();
@@ -78,7 +90,7 @@ async function handleSolveRequest({ apiKey, model, promptParts, cacheKey, useCac
     let message = `Lỗi API (${response.status})`;
     try {
       const parsed = JSON.parse(text);
-      message = parsed?.error?.message || message;
+      message = parsed?.error?.message || parsed?.message || message;
     } catch (e) {
       // ignore JSON parse error
     }
@@ -86,10 +98,10 @@ async function handleSolveRequest({ apiKey, model, promptParts, cacheKey, useCac
   }
 
   const data = await response.json();
-  const content = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('').trim();
+  const content = data?.choices?.[0]?.message?.content?.trim();
 
   if (!content) {
-    throw new Error('Không nhận được phản hồi từ Gemini.');
+    throw new Error('Không nhận được phản hồi từ AI Gateway.');
   }
 
   if (useCache && cacheKey) {
