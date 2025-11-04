@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "GPT Homework Solver",
+  "description": "Giải bài tập với GPT thông qua Vercel AI Gateway bằng cách lấy nhanh văn bản được bôi đen và sinh lời giải theo mẫu chuẩn.",
+  "version": "1.0.0",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://ai-gateway.vercel.sh/*"
+  ],
+  "action": {
+    "default_title": "GPT Homework Solver",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
