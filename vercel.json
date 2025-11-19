@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "routes": [
+    { "src": "^/$", "dest": "api/control.js" },
+    { "src": "/api/codespace/create", "dest": "api/codespace/create.js" },
+    { "src": "/api/codespace/status", "dest": "api/codespace/status.js" },
+    { "src": "/api/codespace/backup", "dest": "api/codespace/backup.js" }
+  ],
+  "env": {
+    "BACKUP_GIST_ID": "${BACKUP_GIST_ID}",
+    "REPOSITORY_ID": "${REPOSITORY_ID}"
+  }
+}
