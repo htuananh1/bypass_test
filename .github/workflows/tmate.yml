@@ -9,8 +9,6 @@ jobs:
   start-vps:
     runs-on: ubuntu-latest
     timeout-minutes: 360  # 6 hours
-    env:
-      TMATE_SERVER: nyc1.tmate.io
 
     steps:
       - name: ⬇️ Checkout
@@ -26,13 +24,42 @@ jobs:
             unzip ".backup/$name.zip" -d . || echo "⚠️ No backup found."
           fi
 
-      - name: 🔐 Start tmate session
+      - name: 🔐 Start SSH via Ngrok
         run: |
-          sudo apt update -y && sudo apt install -y tmate
-          tmate -S /tmp/tmate.sock new-session -d
-          tmate -S /tmp/tmate.sock wait tmate-ready
-          SSH=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
-          echo "$SSH" | tee "links/${{ github.event.client_payload.vps_name || 'manual-vps' }}.txt"
+          sudo apt update -y && sudo apt install -y openssh-server jq
+
+          sudo mkdir -p /run/sshd
+          sudo sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/^#\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
+          echo 'root:github' | sudo chpasswd
+          sudo service ssh restart
+
+          wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz -O ngrok.tgz
+          tar -xzf ngrok.tgz
+          sudo mv ngrok /usr/local/bin/ngrok
+
+          NGROK_AUTH_TOKEN="2RP5rXU5G6aXUfXnQ0a9nP2bJYpYQp8wAMwz1gWwu8U1sZf7"
+          ngrok config add-authtoken "$NGROK_AUTH_TOKEN"
+          nohup ngrok tcp 22 --log=stdout > ngrok.log 2>&1 &
+
+          for i in {1..10}; do
+            sleep 3
+            url=$(curl -s http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[]?.public_url' | head -n1)
+            if [ -n "$url" ] && [ "$url" != "null" ]; then
+              break
+            fi
+          done
+
+          if [ -z "$url" ] || [ "$url" = "null" ]; then
+            echo "❌ Failed to start ngrok tunnel" >&2
+            exit 1
+          fi
+
+          host=${url#tcp://}
+          ssh_host=${host%:*}
+          ssh_port=${host#*:}
+          echo "ssh root@$ssh_host -p $ssh_port (password: github)" | tee "links/${{ github.event.client_payload.vps_name || 'manual-vps' }}.txt"
 
       - name: 🚀 Start Playit Tunnel
         run: |
