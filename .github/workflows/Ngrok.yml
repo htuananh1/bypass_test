@@ -9,6 +9,8 @@ jobs:
   start-vps:
     runs-on: ubuntu-latest
     timeout-minutes: 360  # 6 hours
+    env:
+      NGROK_AUTHTOKEN: 35j38tdJs772i6jFOoPQxUlX4yQ_71N6sXJ2LswwhQ3JMP8hK
 
     steps:
       - name: ⬇️ Checkout
@@ -39,8 +41,12 @@ jobs:
           tar -xzf ngrok.tgz
           sudo mv ngrok /usr/local/bin/ngrok
 
-          NGROK_AUTH_TOKEN="2RP5rXU5G6aXUfXnQ0a9nP2bJYpYQp8wAMwz1gWwu8U1sZf7"
-          ngrok config add-authtoken "35j38tdJs772i6jFOoPQxUlX4yQ_71N6sXJ2LswwhQ3JMP8hK"
+          if [ -z "${NGROK_AUTHTOKEN}" ]; then
+            echo "❌ Missing NGROK_AUTHTOKEN secret" >&2
+            exit 1
+          fi
+
+          ngrok config add-authtoken "${NGROK_AUTHTOKEN}"
           nohup ngrok tcp 22 --log=stdout > ngrok.log 2>&1 &
 
           for i in {1..10}; do
@@ -52,6 +58,8 @@ jobs:
           done
 
           if [ -z "$url" ] || [ "$url" = "null" ]; then
+            echo "Ngrok log output:" >&2
+            tail -n 50 ngrok.log >&2 || true
             echo "❌ Failed to start ngrok tunnel" >&2
             exit 1
           fi
