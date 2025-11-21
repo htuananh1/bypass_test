@@ -1,6 +1,6 @@
-# 🤖 Gemini AI Text Generator
+# 🤖 Gemini AI Chat - ChatGPT-like Interface
 
-Ứng dụng web chạy trên GitHub Pages để generate text sử dụng Google Gemini 3 Pro API.
+Ứng dụng web chat AI với giao diện giống ChatGPT, chạy trên GitHub Pages, sử dụng Google Gemini 3 Pro API.
 
 ## ✨ Tính năng
 
