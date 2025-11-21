@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import './style.css';
 
 // DOM Elements
 const sidebar = document.getElementById('sidebar');

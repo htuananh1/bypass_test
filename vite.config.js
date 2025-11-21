@@ -1,11 +1,20 @@
 import { defineConfig } from 'vite'
 
-// Nếu deploy lên GitHub Pages với custom domain, đổi base thành '/'
-// Nếu deploy với repo name, sử dụng '/bypass_test/'
+// Base path cho GitHub Pages
+const base = process.env.NODE_ENV === 'production' ? '/bypass_test/' : '/'
+
 export default defineConfig({
-  base: process.env.NODE_ENV === 'production' ? '/bypass_test/' : '/',
+  base: base,
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
+    rollupOptions: {
+      input: {
+        main: './index.html',
+      },
+    },
+  },
+  server: {
+    port: 5173,
   },
 })
