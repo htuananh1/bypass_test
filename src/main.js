@@ -27,41 +27,68 @@ let conversations = JSON.parse(localStorage.getItem(STORAGE_CONVERSATIONS) || '[
 let currentConversationId = localStorage.getItem(STORAGE_CURRENT_CONVERSATION) || null;
 let currentMessages = [];
 
-// Initialize
-if (apiKey) {
-  apiKeyInput.value = apiKey;
-}
-
-loadConversations();
-if (currentConversationId) {
-  loadConversation(currentConversationId);
-} else {
-  showWelcomeScreen();
-}
-
-// Event Listeners
-newChatBtn.addEventListener('click', createNewChat);
-sidebarToggle.addEventListener('click', toggleSidebar);
-sendBtn.addEventListener('click', sendMessage);
-messageInput.addEventListener('input', handleInputChange);
-messageInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    if (!sendBtn.disabled) {
-      sendMessage();
-    }
+// Initialize when DOM is ready
+function init() {
+  // Check if all elements exist
+  if (!sidebar || !newChatBtn || !messageInput || !sendBtn) {
+    console.error('Some DOM elements are missing');
+    return;
   }
-});
-apiKeyBtn.addEventListener('click', () => showModal());
-closeModal.addEventListener('click', hideModal);
-cancelApiKey.addEventListener('click', hideModal);
-saveApiKeyBtn.addEventListener('click', saveApiKey);
 
-// Auto-resize textarea
-messageInput.addEventListener('input', function() {
-  this.style.height = 'auto';
-  this.style.height = Math.min(this.scrollHeight, 200) + 'px';
-});
+  // Initialize API key
+  if (apiKey && apiKeyInput) {
+    apiKeyInput.value = apiKey;
+  }
+
+  // Load conversations and messages
+  loadConversations();
+  if (currentConversationId) {
+    loadConversation(currentConversationId);
+  } else {
+    showWelcomeScreen();
+  }
+
+  // Event Listeners
+  if (newChatBtn) newChatBtn.addEventListener('click', createNewChat);
+  if (sidebarToggle) sidebarToggle.addEventListener('click', toggleSidebar);
+  if (sendBtn) sendBtn.addEventListener('click', sendMessage);
+  if (messageInput) {
+    messageInput.addEventListener('input', handleInputChange);
+    messageInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (!sendBtn.disabled) {
+          sendMessage();
+        }
+      }
+    });
+    // Auto-resize textarea
+    messageInput.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+    });
+  }
+  if (apiKeyBtn) apiKeyBtn.addEventListener('click', () => showModal());
+  if (closeModal) closeModal.addEventListener('click', hideModal);
+  if (cancelApiKey) cancelApiKey.addEventListener('click', hideModal);
+  if (saveApiKeyBtn) saveApiKeyBtn.addEventListener('click', saveApiKey);
+
+  // Close modal on outside click
+  if (apiKeyModal) {
+    apiKeyModal.addEventListener('click', (e) => {
+      if (e.target === apiKeyModal) {
+        hideModal();
+      }
+    });
+  }
+}
+
+// Wait for DOM to be ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
 
 // Handle input change
 function handleInputChange() {
@@ -187,27 +214,35 @@ function showWelcomeScreen() {
 
 // Render Messages
 function renderMessages() {
+  if (!chatMessages) return;
+  
   if (currentMessages.length === 0) {
     showWelcomeScreen();
     return;
   }
 
   chatMessages.innerHTML = currentMessages.map((msg, index) => {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `message ${msg.role}`;
-    msgDiv.innerHTML = `
-      <div class="message-avatar">${msg.role === 'user' ? 'U' : 'G'}</div>
-      <div class="message-content">
-        <div class="message-text">${formatMessage(msg.content)}</div>
-        <div class="message-actions">
-          <button class="message-action-btn" data-index="${index}">Copy</button>
+    const content = msg.error ? `<div class="error">${escapeHtml(msg.content)}</div>` : formatMessage(msg.content);
+    return `
+      <div class="message ${msg.role}">
+        <div class="message-avatar">${msg.role === 'user' ? 'U' : 'G'}</div>
+        <div class="message-content">
+          <div class="message-text">${content}</div>
+          <div class="message-actions">
+            <button class="message-action-btn" onclick="window.copyMessage(${JSON.stringify(msg.content).replace(/"/g, '&quot;')})">Copy</button>
+          </div>
         </div>
       </div>
     `;
-    const copyBtn = msgDiv.querySelector('.message-action-btn');
-    copyBtn.onclick = () => copyMessage(msg.content);
-    return msgDiv.outerHTML;
   }).join('');
+
+  // Re-attach event listeners for copy buttons
+  chatMessages.querySelectorAll('.message-action-btn').forEach((btn, index) => {
+    btn.onclick = () => {
+      const msg = currentMessages[index];
+      if (msg) copyMessage(msg.content);
+    };
+  });
 
   scrollToBottom();
 }
@@ -223,16 +258,36 @@ function formatMessage(text) {
 
 // Copy Message
 window.copyMessage = function(text) {
-  // Remove HTML tags and decode entities
-  const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = text;
-  const plainText = tempDiv.textContent || tempDiv.innerText || '';
+  if (!text) return;
   
-  navigator.clipboard.writeText(plainText).then(() => {
-    showToast('Copied to clipboard', 'success');
-  }).catch(() => {
-    showToast('Failed to copy', 'error');
-  });
+  // If text contains HTML, extract plain text
+  let plainText = text;
+  if (text.includes('<')) {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = text;
+    plainText = tempDiv.textContent || tempDiv.innerText || text;
+  }
+  
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(plainText).then(() => {
+      showToast('Copied to clipboard', 'success');
+    }).catch(() => {
+      // Fallback for older browsers
+      const textarea = document.createElement('textarea');
+      textarea.value = plainText;
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        showToast('Copied to clipboard', 'success');
+      } catch (err) {
+        showToast('Failed to copy', 'error');
+      }
+      document.body.removeChild(textarea);
+    });
+  } else {
+    showToast('Clipboard not supported', 'error');
+  }
 };
 
 // Send Message
@@ -386,10 +441,3 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
-
-// Close modal on outside click
-apiKeyModal.addEventListener('click', (e) => {
-  if (e.target === apiKeyModal) {
-    hideModal();
-  }
-});
